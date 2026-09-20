@@ -5,7 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "30 4 * * *"   # todos os dias ~05:30 em Lisboa
 
 permissions:
   contents: read
@@ -24,29 +24,33 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # Se o repositorio so tiver o stcp-app.zip, extrai-o (sem apagar ficheiros ja existentes)
       - name: Extrair app
         run: |
           if [ -f stcp-app.zip ]; then unzip -q -n stcp-app.zip; fi
           test -f scripts/build_data.py || { echo "Falta scripts/build_data.py (envie o stcp-app.zip)"; exit 1; }
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/cache@v4
-        with:
-          path: .cache
-          key: zonas-${{ github.run_id }}
-          restore-keys: zonas-
+
       - id: pages
         uses: actions/configure-pages@v5
-      - name: Descarregar GTFS da STCP e gerar dados
+
+      - name: Descarregar horarios da STCP e gerar dados
+        env:
+          STCP_PROXY: ${{ vars.STCP_PROXY }}
         run: |
           if ! python scripts/build_data.py; then
-            echo "::warning::Falhou a atualizacao do GTFS; a republicar os dados da ultima versao."
+            echo "::warning::Falhou a atualizacao dos horarios; a republicar os dados da ultima versao."
             mkdir -p site/data
             for f in net.json shapes.json meta.json; do
-              curl -fsSL "${{ steps.pages.outputs.base_url }}/data/$f" -o "site/data/$f"
+              curl -fsSL "${{ steps.pages.outputs.base_url }}/data/$f" -o "site/data/$f" || {
+                echo "::error::Sem horarios novos nem publicacao anterior. Veja o erro acima."; exit 1; }
             done
           fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
