@@ -1,0 +1,54 @@
+name: Atualizar dados e publicar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "30 4 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extrair app
+        run: |
+          if [ -f stcp-app.zip ]; then unzip -q -n stcp-app.zip; fi
+          test -f scripts/build_data.py || { echo "Falta scripts/build_data.py (envie o stcp-app.zip)"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: zonas-${{ github.run_id }}
+          restore-keys: zonas-
+      - id: pages
+        uses: actions/configure-pages@v5
+      - name: Descarregar GTFS da STCP e gerar dados
+        run: |
+          if ! python scripts/build_data.py; then
+            echo "::warning::Falhou a atualizacao do GTFS; a republicar os dados da ultima versao."
+            mkdir -p site/data
+            for f in net.json shapes.json meta.json; do
+              curl -fsSL "${{ steps.pages.outputs.base_url }}/data/$f" -o "site/data/$f"
+            done
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
