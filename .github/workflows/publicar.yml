@@ -17,7 +17,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------- testes
+  # Correm antes de publicar: se algum falhar, o app fica como estava.
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extrair app
+        run: |
+          if [ -f stcp-app.zip ]; then unzip -q -n stcp-app.zip; fi
+          test -d testes || { echo "Falta a pasta testes (envie o stcp-app.zip mais recente)"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Lógica pura: percursos, zonas, tempo real, meteorologia, formatação.
+      # Os limiares de cobertura impedem que se acrescente código sem teste.
+      - name: Testes de lógica, com cobertura
+        run: |
+          node --test --experimental-test-coverage \
+            --test-coverage-exclude='testes/**' \
+            --test-coverage-lines=95 \
+            --test-coverage-branches=85 \
+            --test-coverage-functions=90 \
+            "testes/*.test.js"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar o browser de teste
+        run: |
+          pip install --quiet playwright
+          playwright install --with-deps chromium
+
+      # Ecrã: campos, resultados, detalhe, mapa, GPS, definições e respostas
+      # estragadas das APIs. Não precisa de internet.
+      - name: Testes de interface
+        run: python3 testes/browser/testar_ui.py
+
+  # ---------------------------------------------------------------- publicação
   publicar:
+    needs: testes
     runs-on: ubuntu-latest
     environment:
       name: github-pages
